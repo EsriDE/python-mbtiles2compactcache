@@ -1,3 +1,3 @@
-Ansprechpartner: Kai Steinecke
+Ansprechpartner: Kai Steinicke (k.steinicke@esri.de)
 
 Vertretung: 
