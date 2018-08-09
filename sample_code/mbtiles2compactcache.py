@@ -203,74 +203,83 @@ def main():
         # sore the list of files numerical
         for mbtile in sorted([x for x in files if x.endswith('.mbtile')],
                              key=lambda s: [int(c) if c.isdigit() else c for c in re.split('([0-9]+)', s)]):
-            print('Working on file: {0}'.format(os.path.basename(mbtile)))
-            # construct level folder name from .mbtile file name
-            level = 'L' + '{:02d}'.format(int(os.path.splitext(os.path.basename(mbtile))[0]))
-            level_folder = os.path.join(cache_output_folder, level)
-            # get the level as int for later calculations
-            level_int = int(os.path.splitext(os.path.basename(mbtile))[0])
-
-            print('Bundles are written to folder: {0}'.format(level_folder))
-            output_path = level_folder
-
-            # create level folder if not exists
-            if not os.path.exists(level_folder):
-                os.makedirs(level_folder)
+            if os.path.exists(os.path.join(mb_tile_folder, mbtile.replace('.mbtile','.done'))):
+                print('Skipping file: {0} - already marked done.'.format(os.path.basename(mbtile)))
             else:
-                # if exists, clean it up
-                for sub_root, sub_dirs, sub_files in os.walk(level_folder):
-                    for sub_dir in sub_dirs:
-                        shutil.rmtree(sub_dir)
-                    for sub_file in sub_files:
-                        os.remove(os.path.join(sub_root, sub_file))
+                print('Working on file: {0}'.format(os.path.basename(mbtile)))
+                # construct level folder name from .mbtile file name
+                level = 'L' + '{:02d}'.format(int(os.path.splitext(os.path.basename(mbtile))[0]))
+                level_folder = os.path.join(cache_output_folder, level)
+                # get the level as int for later calculations
+                level_int = int(os.path.splitext(os.path.basename(mbtile))[0])
 
-            # open the .mbtile as sqlite database
-            database_file = os.path.join(mb_tile_folder, mbtile)
-            database = sqlite3.connect(database_file)
+                print('Bundles are written to folder: {0}'.format(level_folder))
+                output_path = level_folder
 
-            # create some indexes to speed up the process
-            column_cursor = database.cursor()
-            print('Creating column index...')
-            column_cursor.execute('CREATE INDEX IF NOT EXISTS column_idx ON tiles(tile_column)')
+                # create level folder if not exists
+                if not os.path.exists(level_folder):
+                    os.makedirs(level_folder)
+                else:
+                    # if exists, clean it up
+                    for sub_root, sub_dirs, sub_files in os.walk(level_folder):
+                        for sub_dir in sub_dirs:
+                            shutil.rmtree(sub_dir)
+                        for sub_file in sub_files:
+                            os.remove(os.path.join(sub_root, sub_file))
 
-            # get the total number of columns to work on
-            # this in not necessary, used for timing info only
-            print('Getting total number of columns to process...\t')
-            number_of_columns = column_cursor.execute('SELECT count(distinct tile_column) FROM tiles').fetchone()[0]
-            print('Total number of columns: {0}'.format(number_of_columns))
+                # open the .mbtile as sqlite database
+                database_file = os.path.join(mb_tile_folder, mbtile)
+                database = sqlite3.connect(database_file)
 
-            # loop over each column
-            column_cursor.execute('SELECT DISTINCT tile_column FROM tiles')
-            start_time = time.time()
-            current_column = 0
-            current_percent = float(current_column) / float(number_of_columns) * 100
-            print(' {0}% done - ETA: calculating'.format('{:2.2f}'.format(current_percent)))
-            for column in column_cursor:
-                current_column += 1
+                # create some indexes to speed up the process
+                column_cursor = database.cursor()
+                print('Creating column index...')
+                column_cursor.execute('CREATE INDEX IF NOT EXISTS column_idx ON tiles(tile_column)')
 
-                # Process each row in sqlite database
-                row_cursor = database.cursor()
-                # calculate the maximum row number (there are 2^n rows and column at level n)
-                # row numbering in .mbtile is reversed, row n must be converted to (max_rows -1 ) - n
-                max_rows = 2 ** level_int - 1
-                row_cursor.execute('SELECT * FROM tiles WHERE tile_column=?', (column[0],))
-                for row in row_cursor:
-                    add_tile(row[3], max_rows - int(row[2]), int(column[0]))
+                # get the total number of columns to work on
+                # this in not necessary, used for timing info only
+                print('Getting total number of columns to process...\t')
+                number_of_columns = column_cursor.execute('SELECT count(distinct tile_column) FROM tiles').fetchone()[0]
+                print('Total number of columns: {0}'.format(number_of_columns))
 
-                # calculate ETA
-                if current_column % 100 == 0:
-                    current_column_time = (time.time() - start_time) / current_column * (
-                            number_of_columns - current_column) / 60
-                    current_percent = float(current_column) / float(number_of_columns) * 100
-                    print('{0}% done - ETA {1} '.format(
-                        '{:2.2f}'.format(current_percent),
-                        str(datetime.datetime.now() + datetime.timedelta(minutes=current_column_time))[11:-7]))
+                # loop over each column
+                column_cursor.execute('SELECT DISTINCT tile_column FROM tiles')
+                start_time = time.time()
+                current_column = 0
+                current_percent = float(current_column) / float(number_of_columns) * 100
+                print(' {0}% done - ETA: calculating'.format('{:2.2f}'.format(current_percent)))
+                for column in column_cursor:
+                    current_column += 1
 
-            # close the database when finished
-            database.close()
-            print('Done - {0}\n'.format(str(datetime.datetime.now())[11:-7]))
-            # cleanup open bundles
-            cleanup()
+                    # Process each row in sqlite database
+                    row_cursor = database.cursor()
+                    # calculate the maximum row number (there are 2^n rows and column at level n)
+                    # row numbering in .mbtile is reversed, row n must be converted to (max_rows -1 ) - n
+                    max_rows = 2 ** level_int - 1
+                    row_cursor.execute('SELECT * FROM tiles WHERE tile_column=?', (column[0],))
+                    for row in row_cursor:
+                        add_tile(row[3], max_rows - int(row[2]), int(column[0]))
+
+                    # calculate ETA
+                    if current_column % 100 == 0:
+                        current_column_time = (time.time() - start_time) / current_column * (
+                                number_of_columns - current_column) / 60
+                        current_percent = float(current_column) / float(number_of_columns) * 100
+                        print('{0}% done - ETA {1} '.format(
+                            '{:2.2f}'.format(current_percent),
+                            str(datetime.datetime.now() + datetime.timedelta(minutes=current_column_time))[11:-7]))
+
+                # close the database when finished
+                database.close()
+
+                # makr the .mbtile as done
+                done_file = os.path.join(mb_tile_folder, os.path.basename(mbtile.replace('.mbtile','.done')))
+                with open(done_file,'a') as done:
+                    pass
+
+                print('Done - {0}\n'.format(str(datetime.datetime.now())[11:-7]))
+                # cleanup open bundles
+                cleanup()
 
 
 if __name__ == '__main__':
