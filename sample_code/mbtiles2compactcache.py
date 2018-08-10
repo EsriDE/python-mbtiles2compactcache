@@ -275,7 +275,7 @@ def main():
                 # makr the .mbtile as done
                 done_file = os.path.join(mb_tile_folder, os.path.basename(mbtile.replace('.mbtile','.done')))
                 with open(done_file,'a') as done:
-                    pass
+                    done.writelines('Done - {0}\n'.format(str(datetime.datetime.now())[11:-7]))
 
                 print('Done - {0}\n'.format(str(datetime.datetime.now())[11:-7]))
                 # cleanup open bundles
