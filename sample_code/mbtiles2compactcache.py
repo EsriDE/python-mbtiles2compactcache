@@ -256,9 +256,9 @@ def main():
                     # calculate the maximum row number (there are 2^n rows and column at level n)
                     # row numbering in .mbtile is reversed, row n must be converted to (max_rows -1 ) - n
                     max_rows = 2 ** level_int - 1
-                    row_cursor.execute('SELECT * FROM tiles WHERE tile_column=?', (column[0],))
-                    for row in row_cursor:
-                        add_tile(row[3], max_rows - int(row[2]), int(column[0]))
+                    row_cursor.execute('SELECT zoom_level, tile_row, tile_data FROM tiles WHERE tile_column=?', (column[0],))
+                    for zoom_level, tile_row, tile_data in row_cursor:
+                        add_tile(tile_data, max_rows - int(tile_row), int(column[0]))
 
                     # calculate ETA
                     if current_column % 100 == 0:
