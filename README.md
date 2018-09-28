@@ -10,7 +10,7 @@ The Compact Cache V2 is the current file format used by ArcGIS to store raster t
 | Row 1 | ![Row 1 Col 0](sample_tiles/L01/1/0.jpg) | ![Row 1 Col 1](sample_tiles/L01/1/1.jpg) |
 
 ## Content
-This repository contains [documentation](CompactCacheV2.md), a [sample cache](sample_cache) and a Python 2.x [code example](sample_code) of how to build Compact Cache V2 bundles from individual image tiles.
+This repository contains [documentation](CompactCacheV2.md), a [sample cache](sample_cache) and a Python 2.x [code example](sample_code) of how to build Compact Cache V2 bundles from MBTiles.
 
 ## Licensing
 
