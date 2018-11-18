@@ -40,6 +40,8 @@
 # path.
 #
 
+import argparse
+import io
 import sys
 import sqlite3
 import os
@@ -48,6 +50,13 @@ import shutil
 import time
 import datetime
 import re
+
+try:
+    from PIL import Image
+    isPillow = True
+except ImportError:
+    isPillow = False
+
 
 # Bundle linear size in tiles
 BSZ = 128
@@ -72,6 +81,34 @@ curr_bname = None
 curr_offset = int(0)
 # max size of a tile in the current bundle
 curr_max = 0
+
+
+def get_arguments():
+    """
+    Parses commandline arguments.
+
+    :return: commandline arguments
+    """
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('-i', '--input_folder',
+                       help='Input folder containing the mbtile files.', required=True)
+    parser.add_argument('-o', '--output_folder',
+                       help='Output for level folders.', required=True)
+
+    parser.add_argument('-g', '--grayscale',
+                        help='Convert tiles to grayscale while processing.', default=False, action="store_true", required=False)
+
+    # Return the command line arguments.
+    arguments = parser.parse_args()
+
+    # validate folder parameters
+    if not os.path.exists(arguments.input_folder):
+        parser.error("Input folder does not exist or is inaccessible.")
+    if not os.path.exists(arguments.output_folder):
+        parser.error("Output folder does not exist or is inaccessible.")
+
+    return arguments
 
 
 def init_bundle(file_name):
@@ -191,11 +228,33 @@ def add_tile(byte_buffer, row, col=None):
     curr_max = max(curr_max, tile_size)
 
 
-def main():
+def add_tile_gray(byte_buffer, row, col=None):
+    """
+    Convert tile to grayscale before adding it to toe bundle.
+
+    :param byte_buffer: input tile as byte buffer
+    :param row: row number
+    :param col: column number
+    """
+
+    try:
+        # read & convert to grayscale
+        image = Image.open(io.BytesIO(byte_buffer))
+        image_gray = image.convert('L')
+        byte_buffer_gray = io.BytesIO()
+        image_gray.save(byte_buffer_gray, format="PNG")
+    except IOError as io_error:
+        print('Failed to create gray scale image for tile (row:{0}/{1}) - error:{2}'.format(row,col,io_error.message))
+        sys.exit(-1)
+
+    add_tile(byte_buffer_gray.getvalue(),row, col)
+
+
+def main(arguments):
     global output_path
 
-    mb_tile_folder = sys.argv[1]
-    cache_output_folder = sys.argv[2]
+    mb_tile_folder = arguments.input_folder
+    cache_output_folder = arguments.output_folder
 
     # loop through all .mbtile files
     for root, dirs, files in os.walk(mb_tile_folder):
@@ -203,7 +262,7 @@ def main():
         # sore the list of files numerical
         for mbtile in sorted([x for x in files if x.endswith('.mbtile')],
                              key=lambda s: [int(c) if c.isdigit() else c for c in re.split('([0-9]+)', s)]):
-            if os.path.exists(os.path.join(mb_tile_folder, mbtile.replace('.mbtile','.done'))):
+            if os.path.exists(os.path.join(mb_tile_folder, mbtile.replace('.mbtile', '.done'))):
                 print('Skipping file: {0} - already marked done.'.format(os.path.basename(mbtile)))
             else:
                 start_time = time.time()
@@ -256,7 +315,15 @@ def main():
                     # calculate the maximum row number (there are 2^n rows and column at level n)
                     # row numbering in .mbtile is reversed, row n must be converted to (max_rows -1 ) - n
                     max_rows = 2 ** level_int - 1
-                    row_cursor.execute('SELECT zoom_level, tile_row, tile_data FROM tiles WHERE tile_column=?', (column[0],))
+                    row_cursor.execute('SELECT zoom_level, tile_row, tile_data FROM tiles WHERE tile_column=?',
+                                       (column[0],))
+
+                    for zoom_level, tile_row, tile_data in row_cursor:
+                        if arguments.grayscale:
+                            add_tile_gray(tile_data, max_rows - int(tile_row), int(column[0]))
+                        else:
+                            add_tile(tile_data, max_rows - int(tile_row), int(column[0]))
+
                     for zoom_level, tile_row, tile_data in row_cursor:
                         add_tile(tile_data, max_rows - int(tile_row), int(column[0]))
 
@@ -272,9 +339,9 @@ def main():
                 # close the database when finished
                 database.close()
 
-                # makr the .mbtile as done
-                done_file = os.path.join(mb_tile_folder, os.path.basename(mbtile.replace('.mbtile','.done')))
-                with open(done_file,'a') as done:
+                # mark the .mbtile as done
+                done_file = os.path.join(mb_tile_folder, os.path.basename(mbtile.replace('.mbtile', '.done')))
+                with open(done_file, 'a') as done:
                     done.writelines('Done - {0}\n'.format(str(datetime.datetime.now())[11:-7]))
 
                 print('Elapsed: {0}s'.format(str(round(time.time() - start_time, 2))))
@@ -284,4 +351,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(get_arguments())

@@ -104,3 +104,4 @@ venv.bak/
 .mypy_cache/
 /sample_mbtiles/*.done
 
+/remove_done_files.bat
