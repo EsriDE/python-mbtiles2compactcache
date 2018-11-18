@@ -40,6 +40,7 @@
 # path.
 #
 
+import argparse
 import io
 import sys
 import sqlite3
@@ -80,6 +81,34 @@ curr_bname = None
 curr_offset = int(0)
 # max size of a tile in the current bundle
 curr_max = 0
+
+
+def get_arguments():
+    """
+    Parses commandline arguments.
+
+    :return: commandline arguments
+    """
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('-i', '--input_folder',
+                       help='Input folder containing the mbtile files.', required=True)
+    parser.add_argument('-o', '--output_folder',
+                       help='Output for level folders.', required=True)
+
+    parser.add_argument('-g', '--grayscale',
+                        help='Convert tiles to grayscale while processing.', default=False, action="store_true", required=False)
+
+    # Return the command line arguments.
+    arguments = parser.parse_args()
+
+    # validate folder parameters
+    if not os.path.exists(arguments.input_folder):
+        parser.error("Input folder does not exist or is inaccessible.")
+    if not os.path.exists(arguments.output_folder):
+        parser.error("Output folder does not exist or is inaccessible.")
+
+    return arguments
 
 
 def init_bundle(file_name):
@@ -239,22 +268,11 @@ def add_tile_gray(byte_buffer, row, col=None):
     curr_max = max(curr_max, tile_size)
 
 
-def main():
+def main(arguments):
     global output_path
 
-    mb_tile_folder = sys.argv[1]
-    cache_output_folder = sys.argv[2]
-
-    do_grayscale = False
-    try:
-        if sys.argv[3] == 'grayscale' and isPillow:
-            do_grayscale = True
-        elif sys.argv[3] == 'grayscale' and not isPillow:
-            print('PIL (Pillow) library is not installed, cannot convert to grayscale.\
-               The library can be installed using: pip install PIL')
-            do_grayscale = False
-    except IndexError:
-        do_grayscale = False
+    mb_tile_folder = arguments.input_folder
+    cache_output_folder = arguments.output_folder
 
     # loop through all .mbtile files
     for root, dirs, files in os.walk(mb_tile_folder):
@@ -319,7 +337,7 @@ def main():
                                        (column[0],))
 
                     for zoom_level, tile_row, tile_data in row_cursor:
-                        if do_grayscale:
+                        if arguments.grayscale:
                             add_tile_gray(tile_data, max_rows - int(tile_row), int(column[0]))
                         else:
                             add_tile(tile_data, max_rows - int(tile_row), int(column[0]))
@@ -350,4 +368,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(get_arguments())
