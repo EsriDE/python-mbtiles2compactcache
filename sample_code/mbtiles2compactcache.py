@@ -230,13 +230,12 @@ def add_tile(byte_buffer, row, col=None):
 
 def add_tile_gray(byte_buffer, row, col=None):
     """
-    Add this tile to the output cache
+    Convert tile to grayscale before adding it to toe bundle.
 
     :param byte_buffer: input tile as byte buffer
     :param row: row number
     :param col: column number
     """
-    global BSZ, curr_bundle, curr_max, curr_offset
 
     try:
         # read & convert to grayscale
@@ -246,26 +245,9 @@ def add_tile_gray(byte_buffer, row, col=None):
         image_gray.save(byte_buffer_gray, format="PNG")
     except IOError as io_error:
         print('Failed to create gray scale image for tile (row:{0}/{1}) - error:{2}'.format(row,col,io_error.message))
-        print('{0}'.format(str(image)))
         sys.exit(-1)
 
-    # Read the tile data
-    tile = byte_buffer_gray.getvalue()
-    tile_size = len(tile)
-
-    # Write the tile at the end of the bundle, prefixed by size
-    open_bundle(row, col)
-    curr_bundle.write(struct.pack("<I", tile_size))
-    curr_bundle.write(tile)
-    # Skip the size
-    curr_offset += 4
-
-    # Update the index, row major
-    curr_index[(row % BSZ) * BSZ + col % BSZ] = curr_offset + (tile_size << 40)
-    curr_offset += tile_size
-
-    # Update the current bundle max tile size
-    curr_max = max(curr_max, tile_size)
+    add_tile(byte_buffer_gray.getvalue(),row, col)
 
 
 def main(arguments):
