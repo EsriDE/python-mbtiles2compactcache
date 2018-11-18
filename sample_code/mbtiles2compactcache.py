@@ -52,11 +52,12 @@ import datetime
 import re
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageFile
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
+
     isPillow = True
 except ImportError:
     isPillow = False
-
 
 # Bundle linear size in tiles
 BSZ = 128
@@ -92,12 +93,13 @@ def get_arguments():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-i', '--input_folder',
-                       help='Input folder containing the mbtile files.', required=True)
+                        help='Input folder containing the mbtile files.', required=True)
     parser.add_argument('-o', '--output_folder',
-                       help='Output for level folders.', required=True)
+                        help='Output for level folders.', required=True)
 
     parser.add_argument('-g', '--grayscale',
-                        help='Convert tiles to grayscale while processing.', default=False, action="store_true", required=False)
+                        help='Convert tiles to grayscale while processing.', default=False, action="store_true",
+                        required=False)
 
     # Return the command line arguments.
     arguments = parser.parse_args()
