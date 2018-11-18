@@ -206,6 +206,7 @@ def main():
             if os.path.exists(os.path.join(mb_tile_folder, mbtile.replace('.mbtile','.done'))):
                 print('Skipping file: {0} - already marked done.'.format(os.path.basename(mbtile)))
             else:
+                start_time = time.time()
                 print('Working on file: {0}'.format(os.path.basename(mbtile)))
                 # construct level folder name from .mbtile file name
                 level = 'L' + '{:02d}'.format(int(os.path.splitext(os.path.basename(mbtile))[0]))
@@ -244,7 +245,6 @@ def main():
 
                 # loop over each column
                 column_cursor.execute('SELECT DISTINCT tile_column FROM tiles')
-                start_time = time.time()
                 current_column = 0
                 current_percent = float(current_column) / float(number_of_columns) * 100
                 print(' {0}% done - ETA: calculating'.format('{:2.2f}'.format(current_percent)))
@@ -277,6 +277,7 @@ def main():
                 with open(done_file,'a') as done:
                     done.writelines('Done - {0}\n'.format(str(datetime.datetime.now())[11:-7]))
 
+                print('Elapsed: {0}s'.format(str(round(time.time() - start_time, 2))))
                 print('Done - {0}\n'.format(str(datetime.datetime.now())[11:-7]))
                 # cleanup open bundles
                 cleanup()
