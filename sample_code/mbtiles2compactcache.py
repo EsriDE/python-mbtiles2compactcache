@@ -52,11 +52,12 @@ import datetime
 import re
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageFile
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
+
     isPillow = True
 except ImportError:
     isPillow = False
-
 
 # Bundle linear size in tiles
 BSZ = 128
@@ -92,12 +93,13 @@ def get_arguments():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-i', '--input_folder',
-                       help='Input folder containing the mbtile files.', required=True)
+                        help='Input folder containing the mbtile files.', required=True)
     parser.add_argument('-o', '--output_folder',
-                       help='Output for level folders.', required=True)
+                        help='Output for level folders.', required=True)
 
     parser.add_argument('-g', '--grayscale',
-                        help='Convert tiles to grayscale while processing.', default=False, action="store_true", required=False)
+                        help='Convert tiles to grayscale while processing.', default=False, action="store_true",
+                        required=False)
 
     # Return the command line arguments.
     arguments = parser.parse_args()
@@ -291,50 +293,34 @@ def main(arguments):
                 database_file = os.path.join(mb_tile_folder, mbtile)
                 database = sqlite3.connect(database_file)
 
-                # create some indexes to speed up the process
-                column_cursor = database.cursor()
-                print('Creating column index...')
-                column_cursor.execute('CREATE INDEX IF NOT EXISTS column_idx ON tiles(tile_column)')
+                # loop over each tile
+                row_cursor = database.cursor()
 
-                # get the total number of columns to work on
-                # this in not necessary, used for timing info only
-                print('Getting total number of columns to process...\t')
-                number_of_columns = column_cursor.execute('SELECT count(distinct tile_column) FROM tiles').fetchone()[0]
-                print('Total number of columns: {0}'.format(number_of_columns))
+                tile_count = row_cursor.execute('SELECT count(*) from tiles').fetchone()[0]
+                max_rows = 2 ** level_int - 1
+                print('{0}/{1} tiles present in current level.'.format(tile_count,max_rows ** 2))
+                row_cursor.execute('SELECT zoom_level, tile_row, tile_column, tile_data FROM tiles')
+                current_tile = 1
 
-                # loop over each column
-                column_cursor.execute('SELECT DISTINCT tile_column FROM tiles')
-                current_column = 0
-                current_percent = float(current_column) / float(number_of_columns) * 100
-                print(' {0}% done - ETA: calculating'.format('{:2.2f}'.format(current_percent)))
-                for column in column_cursor:
-                    current_column += 1
-
-                    # Process each row in sqlite database
-                    row_cursor = database.cursor()
+                for zoom_level, tile_row, tile_column, tile_data in row_cursor:
                     # calculate the maximum row number (there are 2^n rows and column at level n)
                     # row numbering in .mbtile is reversed, row n must be converted to (max_rows -1 ) - n
-                    max_rows = 2 ** level_int - 1
-                    row_cursor.execute('SELECT zoom_level, tile_row, tile_data FROM tiles WHERE tile_column=?',
-                                       (column[0],))
 
-                    for zoom_level, tile_row, tile_data in row_cursor:
-                        if arguments.grayscale:
-                            add_tile_gray(tile_data, max_rows - int(tile_row), int(column[0]))
-                        else:
-                            add_tile(tile_data, max_rows - int(tile_row), int(column[0]))
-
-                    for zoom_level, tile_row, tile_data in row_cursor:
-                        add_tile(tile_data, max_rows - int(tile_row), int(column[0]))
+                    if arguments.grayscale:
+                        add_tile_gray(tile_data, max_rows - int(tile_row), int(tile_column))
+                    else:
+                        add_tile(tile_data, max_rows - int(tile_row), int(tile_column))
 
                     # calculate ETA
-                    if current_column % 100 == 0:
-                        current_column_time = (time.time() - start_time) / current_column * (
-                                number_of_columns - current_column) / 60
-                        current_percent = float(current_column) / float(number_of_columns) * 100
+                    if current_tile % 1024 == 0:
+                        current_tile_time = (time.time() - start_time) / current_tile * (
+                                tile_count - current_tile) / 60
+                        current_percent = float(current_tile) / float(tile_count) * 100
                         print('{0}% done - ETA {1} '.format(
                             '{:2.2f}'.format(current_percent),
-                            str(datetime.datetime.now() + datetime.timedelta(minutes=current_column_time))[11:-7]))
+                            str(datetime.datetime.now() + datetime.timedelta(minutes=current_tile_time))[11:-7]))
+
+                    current_tile += 1
 
                 # close the database when finished
                 database.close()
