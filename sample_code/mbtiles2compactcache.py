@@ -5,7 +5,8 @@
 # Author:      luci6974
 #
 # Created:     20/09/2016
-# Modified:    04/05/2018,esristeinicke
+# Modified:    04/05/2018,stk
+#              23/10/2019,mimo
 #
 #  Copyright 2016 Esri
 #
@@ -37,10 +38,23 @@
 # It does not check the input tile format, and assumes that all
 # the files are valid sqlite tile databases.  In other
 # words, make sure there are no spurious files and folders under the input
-# path.
+# path, otherwise the output bundles might have strange content.
 #
+# -------------------------------------------------------------------------------
+#
+# v1.2 added grayscale Option (requires pillow)
+#    * to install pillow:
+#       * make sure python & scripts/pip is in path
+#       * in cmd type pip install pillow
+#
+# v1.3 fixed grayscale (Grayscale + Alpha = fixed grayscale Image) & (96 DPI)
+#
+# v1.4 better logging / fixing for python 3 / fixed ETA
+#
+# v1.5 better parameter support & parameter help
 
 import sys
+import getopt
 import sqlite3
 import os
 import struct
@@ -48,6 +62,9 @@ import shutil
 import time
 import datetime
 import re
+
+from PIL import Image
+import io
 
 # Bundle linear size in tiles
 BSZ = 128
@@ -69,6 +86,7 @@ curr_index = None
 # Bundle file name without path or extension
 curr_bname = None
 # Current size of bundle file
+# curr_offset = long(0)
 curr_offset = int(0)
 # max size of a tile in the current bundle
 curr_max = 0
@@ -127,10 +145,12 @@ def open_bundle(row, col):
     """
     global curr_bname, curr_bundle, curr_index, curr_offset, output_path, curr_max
     # row and column of top-left tile in the output bundle
-    start_row = (row / BSZ) * BSZ
-    start_col = (col / BSZ) * BSZ
+    # start_row = (row / BSZ) * BSZ
+    start_row = int((row / BSZ)) * BSZ
+    # start_col = (col / BSZ) * BSZ
+    start_col = int((col / BSZ)) * BSZ
     bname = "R{:04x}C{:04x}".format(start_row, start_col)
-    #    bname = "R%(r)04xC%(c)04x" % {"r": start_row, "c": start_col}
+    # bname = "R%(r)04xC%(c)04x" % {"r": start_row, "c": start_col}
 
     # If the name matches the current bundle, nothing to do
     if bname == curr_bname:
@@ -173,7 +193,7 @@ def add_tile(byte_buffer, row, col=None):
     global BSZ, curr_bundle, curr_max, curr_offset
 
     # Read the tile data
-    tile = str(byte_buffer)
+    tile = io.BytesIO(byte_buffer).getvalue()
     tile_size = len(tile)
 
     # Write the tile at the end of the bundle, prefixed by size
@@ -191,11 +211,81 @@ def add_tile(byte_buffer, row, col=None):
     curr_max = max(curr_max, tile_size)
 
 
+def add_tile_gray(byte_buffer, row, col=None):
+    """
+    Add this tile to the output cache
+
+    :param byte_buffer: input tile as byte buffer
+    :param row: row number
+    :param col: column number
+    """
+    global BSZ, curr_bundle, curr_max, curr_offset
+
+    # read & convert to grayscale
+    image = Image.open(io.BytesIO(byte_buffer))
+    image_gray = image.convert('LA')
+    byte_buffer_gray = io.BytesIO()
+    # image_gray.save(byte_buffer_gray, format="PNG", dpi=(96, 96))
+    image_gray.save(byte_buffer_gray, 'PNG', dpi=(96, 96))
+
+    # Read the tile data
+    tile = byte_buffer_gray.getvalue()
+    tile_size = len(tile)
+
+    # Write the tile at the end of the bundle, prefixed by size
+    open_bundle(row, col)
+    curr_bundle.write(struct.pack("<I", tile_size))
+    curr_bundle.write(tile)
+    # Skip the size
+    curr_offset += 4
+
+    # Update the index, row major
+    curr_index[(row % BSZ) * BSZ + col % BSZ] = curr_offset + (tile_size << 40)
+    curr_offset += tile_size
+
+    # Update the current bundle max tile size
+    curr_max = max(curr_max, tile_size)
+
+
+def usage():
+    print('mbtiles2compactcache.py -s {SourceDir} -d {DestinationDir} [-l {Level}] [-g]')
+    print('               -s Path to SorceDir')
+    print('               -d Path to DestinationDir')
+    print('               -l (Optional) do only this Level (usefull for parallel starts with Grayscale)')
+    print('               -g (Optional) convert Tiles to Grayscale')
+
+
 def main():
     global output_path
 
-    mb_tile_folder = sys.argv[1]
-    cache_output_folder = sys.argv[2]
+    # parse parameter
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], 's:d:l:g', ['sourcedir=', 'destinationdir=', 'level=', 'grayscale'])
+    except getopt.GetoptError:
+        usage()
+        sys.exit(2)
+
+    mb_tile_folder = ''
+    cache_output_folder = ''
+    level_param = -1
+    do_grayscale = False
+
+    for opt, arg in opts:
+        if opt in ('-s', '--sourcedir'):
+            mb_tile_folder = arg
+        elif opt in ('-d', '--destinationdir'):
+            cache_output_folder = arg
+        elif opt in ('-l', '--level'):
+            level_param = int(arg)
+        elif opt in ('-g', '--grayscale'):
+            do_grayscale = True
+        else:
+            usage()
+            sys.exit(2)
+
+    if len(mb_tile_folder) == 0 or len(cache_output_folder) == 0:
+        usage()
+        sys.exit(2)
 
     # loop through all .mbtile files
     for root, dirs, files in os.walk(mb_tile_folder):
@@ -203,83 +293,100 @@ def main():
         # sore the list of files numerical
         for mbtile in sorted([x for x in files if x.endswith('.mbtile')],
                              key=lambda s: [int(c) if c.isdigit() else c for c in re.split('([0-9]+)', s)]):
-            if os.path.exists(os.path.join(mb_tile_folder, mbtile.replace('.mbtile','.done'))):
-                print('Skipping file: {0} - already marked done.'.format(os.path.basename(mbtile)))
+            print('Working on file: {0}'.format(os.path.basename(mbtile)))
+            # construct level folder name from .mbtile file name
+            level = 'L' + '{:02d}'.format(int(os.path.splitext(os.path.basename(mbtile))[0]))
+            level_folder = os.path.join(cache_output_folder, level)
+            # get the level as int for later calculations
+            level_int = int(os.path.splitext(os.path.basename(mbtile))[0])
+            # Test if level-parameter is set
+            if level_param != -1 and level_param != level_int:
+                print('Level Parameter Set to {0} skipping\n'.format(level_param))
+                continue
+
+            print('Bundles are written to folder: {0}'.format(level_folder))
+            output_path = level_folder
+
+            # create level folder if not exists
+            if not os.path.exists(level_folder):
+                os.makedirs(level_folder)
             else:
-                print('Working on file: {0}'.format(os.path.basename(mbtile)))
-                # construct level folder name from .mbtile file name
-                level = 'L' + '{:02d}'.format(int(os.path.splitext(os.path.basename(mbtile))[0]))
-                level_folder = os.path.join(cache_output_folder, level)
-                # get the level as int for later calculations
-                level_int = int(os.path.splitext(os.path.basename(mbtile))[0])
+                # if exists, clean it up
+                for sub_root, sub_dirs, sub_files in os.walk(level_folder):
+                    for sub_dir in sub_dirs:
+                        shutil.rmtree(sub_dir)
+                    for sub_file in sub_files:
+                        os.remove(os.path.join(sub_root, sub_file))
 
-                print('Bundles are written to folder: {0}'.format(level_folder))
-                output_path = level_folder
+            # open the .mbtile as sqlite database
+            database_file = os.path.join(mb_tile_folder, mbtile)
+            database = sqlite3.connect(database_file)
 
-                # create level folder if not exists
-                if not os.path.exists(level_folder):
-                    os.makedirs(level_folder)
-                else:
-                    # if exists, clean it up
-                    for sub_root, sub_dirs, sub_files in os.walk(level_folder):
-                        for sub_dir in sub_dirs:
-                            shutil.rmtree(sub_dir)
-                        for sub_file in sub_files:
-                            os.remove(os.path.join(sub_root, sub_file))
+            # create som indexes to speed up the process
+            column_cursor = database.cursor()
+            print('Creating column index...')
+            column_cursor.execute('CREATE INDEX IF NOT EXISTS column_idx ON tiles(tile_column)')
 
-                # open the .mbtile as sqlite database
-                database_file = os.path.join(mb_tile_folder, mbtile)
-                database = sqlite3.connect(database_file)
+            # get the total number of columns to work on
+            # this in not necessary, used for timing info only
+            print('Getting total number of Tiles to process...\t')
+            number_of_columns = column_cursor.execute('SELECT count(distinct tile_column) FROM tiles').fetchone()[0]
+            number_of_tiles = column_cursor.execute('SELECT count(*) FROM tiles').fetchone()[0]
+            # print('Total number of Columns: {0}'.format(number_of_columns))
+            print('Total number of Tiles: {0}'.format(number_of_tiles))
 
-                # create some indexes to speed up the process
-                column_cursor = database.cursor()
-                print('Creating column index...')
-                column_cursor.execute('CREATE INDEX IF NOT EXISTS column_idx ON tiles(tile_column)')
+            # loop over each column
+            column_cursor.execute('SELECT DISTINCT tile_column FROM tiles')
+            # start_time = time.time()
+            start_time = datetime.datetime.now()
+            current_column = 0
+            current_tile = 0
+            current_percent = float(current_column) / float(number_of_columns) * 100
+            print('  {0} % done - Time {1}'.format('{:3.2f}'.format(0),
+                                                   format(str(datetime.datetime.now().strftime("%m-%d-%Y %H:%M:%S")))))
+            for column in column_cursor:
+                current_column += 1
 
-                # get the total number of columns to work on
-                # this in not necessary, used for timing info only
-                print('Getting total number of columns to process...\t')
-                number_of_columns = column_cursor.execute('SELECT count(distinct tile_column) FROM tiles').fetchone()[0]
-                print('Total number of columns: {0}'.format(number_of_columns))
+                # Process each row in sqlite database
+                row_cursor = database.cursor()
+                # calculate the maximum row number (there are 2^n rows and column at level n)
+                # row numbering in .mbtile is reversed, row n must be converted to (max_rows -1 ) - n
+                max_rows = 2 ** level_int - 1
+                row_cursor.execute('SELECT * FROM tiles WHERE tile_column=?', (column[0],))
+                for row in row_cursor:
+                    current_tile += 1
+                    if do_grayscale:
+                        add_tile_gray(row[3], max_rows - int(row[2]), int(column[0]))
+                    else:
+                        add_tile(row[3], max_rows - int(row[2]), int(column[0]))
 
-                # loop over each column
-                column_cursor.execute('SELECT DISTINCT tile_column FROM tiles')
-                start_time = time.time()
-                current_column = 0
-                current_percent = float(current_column) / float(number_of_columns) * 100
-                print(' {0}% done - ETA: calculating'.format('{:2.2f}'.format(current_percent)))
-                for column in column_cursor:
-                    current_column += 1
+                # calculate ETA
+                if current_column % 100 == 0:
+                    current_tile_time = (datetime.datetime.now() - start_time).total_seconds() / current_tile * (
+                                number_of_tiles - current_tile)  # seconds to reach 100% Tiles
+                    current_percent = current_tile / number_of_tiles * 100
+                    tiles_per_second = round((current_tile / (datetime.datetime.now() - start_time).total_seconds()), 2)
+                    print(' {0} % done - Time {1} | ETA {2} | Tiles per Second {3}'.format(
+                        '{:3.2f}'.format(current_percent),
+                        format(str(datetime.datetime.now().strftime("%m-%d-%Y %H:%M:%S"))), str(
+                            (datetime.datetime.now() + datetime.timedelta(0, current_tile_time)).strftime(
+                                "%m-%d-%Y %H:%M:%S")), format(tiles_per_second)))
 
-                    # Process each row in sqlite database
-                    row_cursor = database.cursor()
-                    # calculate the maximum row number (there are 2^n rows and column at level n)
-                    # row numbering in .mbtile is reversed, row n must be converted to (max_rows -1 ) - n
-                    max_rows = 2 ** level_int - 1
-                    row_cursor.execute('SELECT zoom_level, tile_row, tile_data FROM tiles WHERE tile_column=?', (column[0],))
-                    for zoom_level, tile_row, tile_data in row_cursor:
-                        add_tile(tile_data, max_rows - int(tile_row), int(column[0]))
-
-                    # calculate ETA
-                    if current_column % 100 == 0:
-                        current_column_time = (time.time() - start_time) / current_column * (
-                                number_of_columns - current_column) / 60
-                        current_percent = float(current_column) / float(number_of_columns) * 100
-                        print('{0}% done - ETA {1} '.format(
-                            '{:2.2f}'.format(current_percent),
-                            str(datetime.datetime.now() + datetime.timedelta(minutes=current_column_time))[11:-7]))
-
-                # close the database when finished
-                database.close()
-
-                # makr the .mbtile as done
-                done_file = os.path.join(mb_tile_folder, os.path.basename(mbtile.replace('.mbtile','.done')))
-                with open(done_file,'a') as done:
-                    done.writelines('Done - {0}\n'.format(str(datetime.datetime.now())[11:-7]))
-
-                print('Done - {0}\n'.format(str(datetime.datetime.now())[11:-7]))
-                # cleanup open bundles
-                cleanup()
+            # close the database when finished
+            database.close()
+            # final output
+            current_tile_time = (datetime.datetime.now() - start_time).total_seconds() / current_tile * (
+                        number_of_tiles - current_tile)  # seconds to reach 100% Tiles
+            current_percent = current_tile / number_of_tiles * 100
+            tiles_per_second = round((current_tile / (datetime.datetime.now() - start_time).total_seconds()), 2)
+            print('{0} % done - Time {1} | ETA {2} | Tiles per Second {3}\n'.format('{:3.2f}'.format(current_percent),
+                                                                                    format(str(
+                                                                                        datetime.datetime.now().strftime(
+                                                                                            "%m-%d-%Y %H:%M:%S"))), str(
+                    (datetime.datetime.now() + datetime.timedelta(0, current_tile_time)).strftime("%m-%d-%Y %H:%M:%S")),
+                                                                                    format(tiles_per_second)))
+            # cleanup open bundles
+            cleanup()
 
 
 if __name__ == '__main__':
