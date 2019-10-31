@@ -52,25 +52,17 @@
 # v1.4 better logging / fixing for python 3 / fixed ETA
 #
 # v1.5 better parameter support & parameter help
-
-import sys
-import getopt
+import argparse
 import sqlite3
 import os
 import struct
 import shutil
-import time
 import datetime
 import re
 import io
 
-try:
-    from PIL import Image, ImageFile
-    ImageFile.LOAD_TRUNCATED_IMAGES = True
+from PIL import Image
 
-    isPillow = True
-except ImportError:
-    isPillow = False
 
 # Bundle linear size in tiles
 BSZ = 128
@@ -106,11 +98,13 @@ def get_arguments():
     """
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-i', '--input_folder',
+    parser.add_argument('-s', '--source',
                         help='Input folder containing the mbtile files.', required=True)
-    parser.add_argument('-o', '--output_folder',
+    parser.add_argument('-d', '--destination',
                         help='Output for level folders.', required=True)
-
+    parser.add_argument('-l', '--level',
+                        help='Do only this Level (useful for parallel starts with Grayscale).', default=-1, type=int,
+                        required=False)
     parser.add_argument('-g', '--grayscale',
                         help='Convert tiles to grayscale while processing.', default=False, action="store_true",
                         required=False)
@@ -119,9 +113,9 @@ def get_arguments():
     arguments = parser.parse_args()
 
     # validate folder parameters
-    if not os.path.exists(arguments.input_folder):
+    if not os.path.exists(arguments.source):
         parser.error("Input folder does not exist or is inaccessible.")
-    if not os.path.exists(arguments.output_folder):
+    if not os.path.exists(arguments.destination):
         parser.error("Output folder does not exist or is inaccessible.")
 
     return arguments
@@ -282,45 +276,14 @@ def add_tile_gray(byte_buffer, row, col=None):
     curr_max = max(curr_max, tile_size)
 
 
-def usage():
-    print('mbtiles2compactcache.py -s {SourceDir} -d {DestinationDir} [-l {Level}] [-g]')
-    print('               -s Path to SorceDir')
-    print('               -d Path to DestinationDir')
-    print('               -l (Optional) do only this Level (usefull for parallel starts with Grayscale)')
-    print('               -g (Optional) convert Tiles to Grayscale')
-
-
-def main():
+def main(arguments):
     global output_path
 
     # parse parameter
-    try:
-        opts, args = getopt.getopt(sys.argv[1:], 's:d:l:g', ['sourcedir=', 'destinationdir=', 'level=', 'grayscale'])
-    except getopt.GetoptError:
-        usage()
-        sys.exit(2)
-
-    mb_tile_folder = ''
-    cache_output_folder = ''
-    level_param = -1
-    do_grayscale = False
-
-    for opt, arg in opts:
-        if opt in ('-s', '--sourcedir'):
-            mb_tile_folder = arg
-        elif opt in ('-d', '--destinationdir'):
-            cache_output_folder = arg
-        elif opt in ('-l', '--level'):
-            level_param = int(arg)
-        elif opt in ('-g', '--grayscale'):
-            do_grayscale = True
-        else:
-            usage()
-            sys.exit(2)
-
-    if len(mb_tile_folder) == 0 or len(cache_output_folder) == 0:
-        usage()
-        sys.exit(2)
+    mb_tile_folder = arguments.source
+    cache_output_folder = arguments.destination
+    level_param = arguments.level
+    do_grayscale = arguments.grayscale
 
     # loop through all .mbtile files
     for root, dirs, files in os.walk(mb_tile_folder):
@@ -425,4 +388,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(get_arguments())
