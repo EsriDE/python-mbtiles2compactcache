@@ -5,7 +5,7 @@
 # Author:      luci6974
 #
 # Created:     20/09/2016
-# Modified:    04/05/2018,stk
+# Modified:    04/05/2018,esristeinicke
 #              23/10/2019,mimo
 #
 #  Copyright 2016 Esri
@@ -62,9 +62,15 @@ import shutil
 import time
 import datetime
 import re
-
-from PIL import Image
 import io
+
+try:
+    from PIL import Image, ImageFile
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+    isPillow = True
+except ImportError:
+    isPillow = False
 
 # Bundle linear size in tiles
 BSZ = 128
@@ -90,6 +96,35 @@ curr_bname = None
 curr_offset = int(0)
 # max size of a tile in the current bundle
 curr_max = 0
+
+
+def get_arguments():
+    """
+    Parses commandline arguments.
+
+    :return: commandline arguments
+    """
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('-i', '--input_folder',
+                        help='Input folder containing the mbtile files.', required=True)
+    parser.add_argument('-o', '--output_folder',
+                        help='Output for level folders.', required=True)
+
+    parser.add_argument('-g', '--grayscale',
+                        help='Convert tiles to grayscale while processing.', default=False, action="store_true",
+                        required=False)
+
+    # Return the command line arguments.
+    arguments = parser.parse_args()
+
+    # validate folder parameters
+    if not os.path.exists(arguments.input_folder):
+        parser.error("Input folder does not exist or is inaccessible.")
+    if not os.path.exists(arguments.output_folder):
+        parser.error("Output folder does not exist or is inaccessible.")
+
+    return arguments
 
 
 def init_bundle(file_name):
@@ -213,7 +248,7 @@ def add_tile(byte_buffer, row, col=None):
 
 def add_tile_gray(byte_buffer, row, col=None):
     """
-    Add this tile to the output cache
+    Convert tile to grayscale before adding it to toe bundle.
 
     :param byte_buffer: input tile as byte buffer
     :param row: row number
