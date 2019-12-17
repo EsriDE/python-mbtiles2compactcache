@@ -61,7 +61,12 @@ import datetime
 import re
 import io
 
-from PIL import Image
+try:
+    from PIL import Image
+    is_pillow = True
+except ImportError as import_error:
+    is_pillow = False
+
 
 
 # Bundle linear size in tiles
@@ -113,6 +118,8 @@ def get_arguments():
     arguments = parser.parse_args()
 
     # validate folder parameters
+    if not is_pillow and arguments.grayscale:
+        parser.error("Grayscale option requires Pillow (PIL) module to be installed.")
     if not os.path.exists(arguments.source):
         parser.error("Input folder does not exist or is inaccessible.")
     if not os.path.exists(arguments.destination):
