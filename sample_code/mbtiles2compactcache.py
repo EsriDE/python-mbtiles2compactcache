@@ -338,7 +338,13 @@ def main(arguments):
             number_of_columns = column_cursor.execute('SELECT count(distinct tile_column) FROM tiles').fetchone()[0]
             number_of_tiles = column_cursor.execute('SELECT count(*) FROM tiles').fetchone()[0]
             # print('Total number of Columns: {0}'.format(number_of_columns))
-            print('Total number of Tiles: {0}'.format(number_of_tiles))
+
+            # skipp level if there are not tiles to process in case of empty level, e.g. level 19
+            if not (number_of_columns and number_of_tiles):
+                print('Found no tiles to process, skipping level.')
+                continue
+            else:
+                print('Total number of Tiles: {0}'.format(number_of_tiles))
 
             # loop over each column
             column_cursor.execute('SELECT DISTINCT tile_column FROM tiles')
