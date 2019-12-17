@@ -9,7 +9,7 @@ The web map TopPlusOpen has 18 levels of detail – from the worldwide overview 
 * Europe (medium scale)
 * Germany and neighboring countries (large scale)
 
-The tile archive of the TopPlusOpen you may download [here](http://www.geodatenzentrum.de/auftrag1/archiv/raster/topplus_open/2017/) in the form of SQLite databases in the mbtile format for the single zoom levels (data volume 940 GB). 
+The tile archive of the TopPlusOpen you may download [here](https://daten.gdz.bkg.bund.de/produkte/topplus_open/TopPlusOpen/aktuell/) in the form of SQLite databases in the mbtile format for the single zoom levels (data volume 940 GB). 
 
 # Terms of use
 The geodata offered here are available via geodata services for download and for online use free of charge according to the [Open Data Datenlizenz Deutschland – Namensnennung – Version 2.0](https://www.govdata.de/dl-de/by-2-0).
