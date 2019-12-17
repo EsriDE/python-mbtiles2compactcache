@@ -16,11 +16,11 @@ The algorithm loops over files, inserting each tile in the appropriate bundle. I
 The [sample_mbtiles](./sample_mbtiles) folder contains example [MBTiles](./sample_mbtiles/README.md) the form of SQLite databases for the single zoom levels for the first three level of the Federal Agency for Cartography and Geodesy - TopPlusOpen cache in Web Mercator projection.  The [sample_cache] (../sample_cache) folder contains a Compact Cache V2 cache produced from these individual mbtiles using the mbtiles2compactcache.py script. The commands used to generate the bundles for each level are:
 
 RGB processing:
-```
+```console
 python sample_code\mbtiles2compactcache.py -i sample_mbtiles -o sample_cache\_alllayers
 ```
 Grayscale processing:
-```
+```console
 python sample_code\mbtiles2compactcache.py -i sample_mbtiles -o sample_cache\_alllayers -g
 ```
 
